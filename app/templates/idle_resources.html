@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Idle Resources Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+  <!-- Header -->
+  <header class="flex justify-between items-center p-4 bg-white shadow">
+    <h1 class="text-3xl font-semibold">Idle Resources Dashboard</h1>
+    <div class="space-x-4">
+      <button onclick="openSettings()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Settings</button>
+      <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Logout</button>
+    </div>
+  </header>
+
+  <!-- Filters -->
+  <section class="p-4 bg-white shadow mt-2">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Resource Types Dropdown -->
+      <div id="resourceTypes" x-data="resourceSelector()" class="relative">
+        <label class="block font-semibold mb-2">AWS Resource:</label>
+        <div @click="open = !open" class="border rounded p-2 cursor-pointer bg-white">
+          <template x-if="selected.length === 0">
+            <span class="text-gray-500">Select resources...</span>
+          </template>
+          <template x-for="item in selected" :key="item">
+            <span class="inline-block bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded mr-1 mb-1" x-text="item"></span>
+          </template>
+        </div>
+        <div x-show="open" @click.away="open = false" class="border mt-1 bg-white rounded shadow p-2 z-10 absolute w-full max-h-48 overflow-auto">
+          <template x-for="item in options" :key="item">
+            <label class="block cursor-pointer">
+              <input type="checkbox" :value="item" @change="toggle(item)" :checked="selected.includes(item)" />
+              <span class="ml-2" x-text="item"></span>
+            </label>
+          </template>
+        </div>
+      </div>
+
+      <!-- Regions Dropdown -->
+      <div id="regions" x-data="regionSelector()" class="relative">
+        <label class="block font-semibold mb-2">AWS Regions:</label>
+        <div @click="open = !open" class="border rounded p-2 cursor-pointer bg-white">
+          <template x-if="selected.length === 0">
+            <span class="text-gray-500">Select regions...</span>
+          </template>
+          <template x-for="item in selected" :key="item">
+            <span class="inline-block bg-green-100 text-green-800 text-sm px-2 py-1 rounded mr-1 mb-1" x-text="item"></span>
+          </template>
+        </div>
+        <div x-show="open" @click.away="open = false" class="border mt-1 bg-white rounded shadow p-2 z-10 absolute w-full max-h-48 overflow-auto">
+          <template x-for="item in options" :key="item">
+            <label class="block cursor-pointer">
+              <input type="checkbox" :value="item" @change="toggle(item)" :checked="selected.includes(item)" />
+              <span class="ml-2" x-text="item"></span>
+            </label>
+          </template>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Actions -->
+  <section class="p-4 bg-white shadow mt-2 flex flex-wrap gap-4 items-center">
+    <button onclick="scanResources()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Scan</button>
+    <span id="scan-status" class="ml-3 text-green-700 font-semibold"></span>
+    <button onclick="openCronJobModal()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Cron Job</button>
+    <button onclick="openAutomationModal()" class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Automation</button>
+    <div id="spinner" class="ml-4 hidden border-4 border-gray-300 border-t-blue-500 rounded-full w-6 h-6 animate-spin"></div>
+  </section>
+
+  <!-- Scan Results -->
+  <section id="scan-results" class="p-4"></section>
+  <div class="pagination text-center pb-10" id="pagination"></div>
+
+  <!-- Cron Job Modal -->
+  <div id="cronJobModal" class="fixed inset-0 bg-black bg-opacity-50 hidden justify-center items-center z-50">
+    <div class="bg-white p-6 rounded-lg w-96 shadow">
+      <h2 class="text-lg font-semibold mb-4">Schedule Cron Job</h2>
+      <label for="cronExpression" class="block mb-2 font-medium">Cron Expression:</label>
+      <input type="text" id="cronExpression" class="w-full border rounded p-2 mb-2" placeholder="e.g. 0 * * * *"/>
+      <p class="text-xs text-gray-600 mb-4">Format: <code>minute hour day month weekday</code><br/>Example: <code>0 * * * *</code> = every hour</p>
+      <div class="flex justify-end gap-3">
+        <button onclick="closeCronJobModal()" class="px-4 py-2 bg-gray-300 rounded">Cancel</button>
+        <button onclick="scheduleCronJob()" class="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Automation Modal -->
+  <div id="automationModal" class="fixed inset-0 bg-black bg-opacity-50 hidden justify-center items-center z-50">
+    <div class="bg-white p-6 rounded-lg w-96 shadow">
+      <h2 class="text-lg font-semibold mb-4">Automation Thresholds</h2>
+      <label class="block mb-2">CPU Usage (%):</label>
+      <input type="number" id="cpuThreshold" class="w-full mb-4 border p-2 rounded" placeholder="e.g. 5"/>
+      <div class="flex justify-end gap-3">
+        <button onclick="closeAutomationModal()" class="px-4 py-2 bg-gray-300 rounded">Cancel</button>
+        <button onclick="saveAutomationSettings()" class="px-4 py-2 bg-yellow-600 text-white rounded">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+    function resourceSelector() {
+      return {
+        open: false,
+        selected: [],
+        options: ['EC2', 'S3', 'EIP', 'EBS', 'Snapshot'],
+        toggle(item) {
+          this.selected.includes(item)
+            ? this.selected = this.selected.filter(i => i !== item)
+            : this.selected.push(item);
+          this.$nextTick(() => scanResources());
+        }
+      }
+    }
+    function regionSelector() {
+      return {
+        open: false,
+        selected: [],
+        options: ['us-east-1', 'us-west-2', 'ap-south-1', 'eu-west-1', 'eu-central-1'],
+        toggle(item) {
+          this.selected.includes(item)
+            ? this.selected = this.selected.filter(i => i !== item)
+            : this.selected.push(item);
+          this.$nextTick(() => scanResources());
+        }
+      }
+    }
+
+    function openCronJobModal() {
+      document.getElementById('cronJobModal').classList.remove('hidden');
+    }
+    function closeCronJobModal() {
+      document.getElementById('cronJobModal').classList.add('hidden');
+    }
+    function openAutomationModal() {
+      document.getElementById('automationModal').classList.remove('hidden');
+    }
+    function closeAutomationModal() {
+      document.getElementById('automationModal').classList.add('hidden');
+    }
+    function scheduleCronJob() {
+      const expr = document.getElementById('cronExpression').value.trim();
+      const regex = /^(\*|[0-5]?\d)\s+(\*|[01]?\d|2[0-3])\s+(\*|0?[1-9]|[12]\d|3[01])\s+(\*|0?[1-9]|1[0-2])\s+(\*|[0-6])$/;
+      if (!regex.test(expr)) {
+        alert("Invalid cron expression.");
+        return;
+      }
+      alert("Cron job scheduled with: " + expr);
+      closeCronJobModal();
+    }
+    function saveAutomationSettings() {
+      const threshold = document.getElementById('cpuThreshold').value;
+      alert("Automation threshold set to: " + threshold + "% CPU");
+      closeAutomationModal();
+    }
+    function openSettings() {
+      alert("Settings Menu: Download Reports – coming soon!");
+    }
+    function logout() {
+      window.location.href = "/logout";
+    }
+
+    let currentPage = 1;
+    const itemsPerPage = 5;
+    let scanData = null;
+    let flatItems = [];
+
+    function flattenData(data) {
+      const items = [];
+      for (const [type, list] of Object.entries(data)) {
+        if (Array.isArray(list)) {
+          list.forEach(item => items.push({ resourceType: type, item }));
+        }
+      }
+      return items;
+    }
+
+    async function scanResources() {
+      const spinner = document.getElementById("spinner");
+      const status = document.getElementById("scan-status");
+      spinner.classList.remove("hidden");
+      status.textContent = "Scanning...";
+
+      const resourceTypes = Array.from(document.querySelectorAll('#resourceTypes input:checked')).map(cb => cb.value);
+      const regions = Array.from(document.querySelectorAll('#regions input:checked')).map(cb => cb.value);
+
+      try {
+        const res = await fetch("/resources/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resource_types: resourceTypes, regions })
+        });
+        if (!res.ok) throw new Error("Scan failed");
+        const data = await res.json();
+        scanData = data;
+        flatItems = flattenData(data);
+        currentPage = 1;
+        renderPage(currentPage);
+        renderPagination();
+        status.textContent = "Scan complete.";
+      } catch (err) {
+        console.error(err);
+        status.textContent = "Scan failed.";
+      } finally {
+        spinner.classList.add("hidden");
+      }
+    }
+
+    function renderPage(page) {
+      const start = (page - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageItems = flatItems.slice(start, end);
+      const resultsDiv = document.getElementById("scan-results");
+      resultsDiv.innerHTML = "";
+
+      if (!pageItems.length) {
+        resultsDiv.innerHTML = "<i>No idle resources found.</i>";
+        return;
+      }
+
+      const grouped = {};
+      pageItems.forEach(({ resourceType, item }) => {
+        if (!grouped[resourceType]) grouped[resourceType] = [];
+        grouped[resourceType].push(item);
+      });
+
+      const getColumns = items => [...new Set(items.flatMap(i => Object.keys(i)))];
+
+      for (const [type, items] of Object.entries(grouped)) {
+        const cols = getColumns(items);
+        const table = document.createElement("table");
+        table.className = "min-w-full mb-6 border-collapse border border-gray-300";
+
+        const thead = document.createElement("thead");
+        thead.innerHTML = `
+          <tr><th colspan="${cols.length}" class="border px-4 py-2 bg-gray-200 text-left text-lg font-semibold">${type} Resources</th></tr>
+          <tr>${cols.map(col => `<th class="border px-4 py-2 bg-gray-100 text-left text-sm">${col}</th>`).join("")}</tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        items.forEach(item => {
+          const row = document.createElement("tr");
+          cols.forEach(col => {
+            const td = document.createElement("td");
+            td.className = "border px-4 py-2 text-sm";
+            td.textContent = item[col] ?? "-";
+            row.appendChild(td);
+          });
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        resultsDiv.appendChild(table);
+      }
+    }
+
+    function renderPagination() {
+      const totalPages = Math.ceil(flatItems.length / itemsPerPage);
+      const container = document.getElementById("pagination");
+      container.innerHTML = "";
+
+      for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement("button");
+        btn.textContent = i;
+        btn.className = `mx-1 px-3 py-1 rounded ${i === currentPage ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`;
+        btn.onclick = () => {
+          currentPage = i;
+          renderPage(currentPage);
+          renderPagination();
+        };
+        container.appendChild(btn);
+      }
+    }
+  </script>
+</body>
+</html>
+
