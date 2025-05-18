@@ -5,17 +5,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import register_user, login_user, verify_password
-from app.routes import resources
+from app.routes import resources  # Assuming you have this, otherwise remove this line and the router include
 
 app = FastAPI()
 
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.include_router(resources.router, prefix="/resources", tags=["resources"])
+
+# Uncomment this if you have routes/resources router, else comment out
+# app.include_router(resources.router, prefix="/resources", tags=["resources"])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Adjust for your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,9 +54,9 @@ async def signup_form(request: Request):
 @app.post("/signup")
 async def signup(
     request: Request,
-    name: str = Form(...), 
-    email: str = Form(...), 
-    password: str = Form(...), 
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
     confirm_password: str = Form(...)
 ):
     if password != confirm_password:
@@ -72,8 +74,7 @@ async def signup(
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    user = {"name": "Your Name"}  # Replace with session/user logic
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 @app.get("/idle-resources", response_class=HTMLResponse)
 async def idle_resources_dashboard(request: Request):
@@ -83,8 +84,7 @@ async def idle_resources_dashboard(request: Request):
 async def scan_idle_resources(request: Request):
     credentials = get_credentials_from_session(request)
     try:
-        # Call your service function
-        idle_ebs = get_idle_ebs_volumes(credentials)
+        idle_ebs = []  # Replace with your actual scan function
         return templates.TemplateResponse("idle_resources.html", {
             "request": request,
             "idle_ebs": idle_ebs
